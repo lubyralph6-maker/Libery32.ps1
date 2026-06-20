@@ -5,11 +5,122 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+$script:MarkerDir = Join-Path $env:LOCALAPPDATA 'Libery32'
+$script:MarkerFile = Join-Path $script:MarkerDir '.launcher_paths'
+
+function Register-CleanupPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    try {
+        if (-not (Test-Path $script:MarkerDir)) {
+            New-Item -ItemType Directory -Path $script:MarkerDir -Force | Out-Null
+        }
+        Add-Content -Path $script:MarkerFile -Value $Path -Encoding UTF8
+    } catch {}
+}
+
+function Invoke-LauncherCleanup {
+    param([string[]]$ExtraPaths = @())
+
+    foreach ($p in $ExtraPaths) {
+        Register-CleanupPath $p
+    }
+
+    if ($PSCommandPath -and ($PSCommandPath.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase))) {
+        Register-CleanupPath $PSCommandPath
+    }
+
+    $paths = @()
+    if (Test-Path $script:MarkerFile) {
+        try { $paths = Get-Content $script:MarkerFile -ErrorAction SilentlyContinue } catch {}
+    }
+
+    foreach ($p in $paths) {
+        if ([string]::IsNullOrWhiteSpace($p)) { continue }
+        try {
+            if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
+        } catch {}
+    }
+
+    $tempRoots = @($env:TEMP)
+    $localTemp = Join-Path $env:LOCALAPPDATA 'Temp'
+    if (Test-Path $localTemp) { $tempRoots += $localTemp }
+
+    foreach ($root in $tempRoots) {
+        foreach ($glob in @('l32_*.ps1', 'Libery32_run.ps1', 'run.ps1', 'libery32.tmp', 'g.ps1', 'ps-script-*.ps1')) {
+            Get-ChildItem -Path $root -Filter $glob -ErrorAction SilentlyContinue |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+        Get-ChildItem -Path $root -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'Libery32|libery32|l32_' } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+
+    try {
+        if (Test-Path $script:MarkerFile) { Remove-Item $script:MarkerFile -Force -ErrorAction SilentlyContinue }
+    } catch {}
+
+    $self = $PSCommandPath
+    if ($self -and (Test-Path $self) -and ($self.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase))) {
+        try {
+            Start-Process cmd.exe -WindowStyle Hidden -ArgumentList @(
+                '/c', ('timeout /t 2 /nobreak >nul & del /f /q "' + $self + '"')
+            ) | Out-Null
+        } catch {}
+    }
+}
+
+function Clear-LauncherHistory {
+    param([string]$ExtraPattern = '')
+
+    $historyPattern = 'discord|cmd|libery32|Libery32|l32_|irm|iex|Invoke-WebRequest|Invoke-RestMethod|WebClient|DownloadFile|OutFile|UseBasicParsing|raw\.githubusercontent|lubyralph6-maker|ExecutionPolicy|powershell.*bypass|Start-Process.*powershell|\.ps1|\.exe'
+    if ($ExtraPattern) { $historyPattern += '|' + $ExtraPattern }
+
+    $historyPaths = @(
+        (Join-Path $env:APPDATA 'Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt'),
+        (Join-Path $env:APPDATA 'Microsoft\PowerShell\PSReadLine\ConsoleHost_history.txt'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt')
+    )
+
+    foreach ($historyPath in $historyPaths) {
+        if (-not (Test-Path $historyPath)) { continue }
+        try {
+            $keep = Get-Content $historyPath -ErrorAction SilentlyContinue |
+                Where-Object { $_ -and ($_ -notmatch $historyPattern) }
+            if ($null -eq $keep) { $keep = @() }
+            $keep | Set-Content -Path $historyPath -Encoding UTF8
+        } catch {}
+    }
+
+    try { Clear-History -ErrorAction SilentlyContinue } catch {}
+}
+
+function Clear-LauncherPrefetch {
+    param([string]$RandomName = '')
+
+    try {
+        if ($RandomName) {
+            Remove-Item ('C:\Windows\Prefetch\*' + $RandomName + '*') -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item 'C:\Windows\Prefetch\*LIBERY32*' -Force -ErrorAction SilentlyContinue
+        Remove-Item 'C:\Windows\Prefetch\POWERSHELL.EXE*.pf' -Force -ErrorAction SilentlyContinue
+        Remove-Item 'C:\Windows\Prefetch\PWSH.EXE*.pf' -Force -ErrorAction SilentlyContinue
+        Remove-Item 'C:\Windows\Prefetch\CMD.EXE*.pf' -Force -ErrorAction SilentlyContinue
+        Remove-Item 'C:\Windows\Prefetch\CONHOST.EXE*.pf' -Force -ErrorAction SilentlyContinue
+    } catch {}
+}
+
+function Start-ElevatedSelf {
+    $tmp = Join-Path $env:TEMP ('l32_' + [guid]::NewGuid().ToString('N') + '.ps1')
+    Register-CleanupPath $tmp
+    (New-Object Net.WebClient).DownloadFile($ScriptUrl, $tmp)
+    Start-Process powershell.exe -Verb RunAs -ArgumentList @('-nop', '-ep', 'bypass', '-NoExit', '-File', $tmp)
+}
+
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $admin) {
     Write-Host 'Requesting Administrator...' -ForegroundColor Cyan
-    $u = $ScriptUrl.Replace("'", "''")
-    Start-Process powershell.exe -Verb RunAs -ArgumentList @('-nop', '-ep', 'bypass', '-NoExit', '-c', "iex ((Invoke-WebRequest '$u' -UseBasicParsing).Content)")
+    Start-ElevatedSelf
     exit
 }
 
@@ -17,26 +128,30 @@ try { Remove-Module PSReadLine -ErrorAction SilentlyContinue } catch {}
 
 $randomName = -join ((65..90) + (97..122) | Get-Random -Count 8 | ForEach-Object { [char]$_ })
 $tempExe = Join-Path $env:TEMP ($randomName + '.exe')
-$pattern = 'discord|cmd|libery32|Libery32|' + $randomName
+Register-CleanupPath $tempExe
 
 $downloaded = $false
 foreach ($url in @($ExeUrl, 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe')) {
     if ([string]::IsNullOrWhiteSpace($url)) { continue }
     try {
         Write-Host ('Downloading: ' + $url) -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $url -OutFile $tempExe -UseBasicParsing
+        (New-Object Net.WebClient).DownloadFile($url, $tempExe)
         if ((Test-Path $tempExe) -and ((Get-Item $tempExe).Length -gt 100000)) {
             $downloaded = $true
             break
         }
         Remove-Item $tempExe -Force -ErrorAction SilentlyContinue
     } catch {
+        Write-Host ('Failed: ' + $url) -ForegroundColor Yellow
         Remove-Item $tempExe -Force -ErrorAction SilentlyContinue
     }
 }
 
 if (-not $downloaded) {
     Write-Host 'Download failed. Upload Libery32.exe to GitHub first.' -ForegroundColor Red
+    Clear-LauncherHistory -ExtraPattern $randomName
+    Clear-LauncherPrefetch -RandomName $randomName
+    Invoke-LauncherCleanup
     Read-Host 'Press Enter to close'
     exit 1
 }
@@ -58,19 +173,9 @@ for ($i = 1; $i -le 5; $i++) {
     }
 }
 
-$historyPath = Join-Path $env:APPDATA 'Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt'
-if (Test-Path $historyPath) {
-    try {
-        $keep = Get-Content $historyPath | Where-Object { $_ -notmatch $pattern }
-        $keep | Set-Content -Path $historyPath -Encoding UTF8
-    } catch {}
-}
+Clear-LauncherHistory -ExtraPattern $randomName
+Clear-LauncherPrefetch -RandomName $randomName
+Invoke-LauncherCleanup
 
-try {
-    Remove-Item ('C:\Windows\Prefetch\*' + $randomName + '*') -Force -ErrorAction SilentlyContinue
-    Remove-Item 'C:\Windows\Prefetch\*LIBERY32*' -Force -ErrorAction SilentlyContinue
-} catch {}
-
-Clear-History
 Write-Host 'Finished' -ForegroundColor Green
 Read-Host 'Press Enter to close'
