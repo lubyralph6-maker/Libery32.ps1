@@ -1,0 +1,63 @@
+param(
+    [string]$u = 'https://github.com/YOUR_USER/YOUR_REPO/releases/latest/download/Libery32.exe',
+    [string]$a = 'https://github.com/YOUR_USER/YOUR_REPO/releases/latest/download/assets.zip',
+    [string]$p = '',
+    [string]$s = 'https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/Libery32.ps1'
+)
+
+$ProgressPreference = 'SilentlyContinue'
+
+function Escape-SingleQuoted([string]$v) {
+    return $v.Replace("'", "''")
+}
+
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    $ue = Escape-SingleQuoted $u
+    $ae = Escape-SingleQuoted $a
+    $pe = Escape-SingleQuoted $p
+    $se = Escape-SingleQuoted $s
+    Start-Process powershell -Verb RunAs -ArgumentList "-nop -ep bypass -c `"`$u='$ue'; `$a='$ae'; `$p='$pe'; iex (irm '$se')`""
+    exit
+}
+
+$installDir = if ($p) {
+    $p
+} else {
+    Join-Path $env:LOCALAPPDATA 'Libery32'
+}
+
+if (-not (Test-Path $installDir)) {
+    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+}
+
+$exePath = Join-Path $installDir 'Libery32.exe'
+$assetsDir = Join-Path $installDir 'assets'
+$tmpExe = Join-Path $env:TEMP 'libery32.tmp'
+$tmpZip = Join-Path $env:TEMP 'libery32_assets.tmp'
+
+try {
+    Invoke-WebRequest $u -OutFile $tmpExe -UseBasicParsing
+    Copy-Item $tmpExe $exePath -Force
+} finally {
+    Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
+}
+
+if ($a) {
+    try {
+        Invoke-WebRequest $a -OutFile $tmpZip -UseBasicParsing
+        if (-not (Test-Path $assetsDir)) {
+            New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null
+        }
+        Expand-Archive -Path $tmpZip -DestinationPath $installDir -Force
+    } finally {
+        Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+    }
+}
+
+if (-not (Test-Path $exePath)) {
+    Write-Error 'Download failed.'
+    exit 1
+}
+
+Start-Process -FilePath $exePath -WorkingDirectory $installDir
+Write-Host 'OK'
