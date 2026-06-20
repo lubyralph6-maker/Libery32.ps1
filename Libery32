@@ -1,14 +1,28 @@
 param(
-    [string]$u = 'https://github.com/YOUR_USER/YOUR_REPO/releases/latest/download/Libery32.exe',
-    [string]$a = 'https://github.com/YOUR_USER/YOUR_REPO/releases/latest/download/assets.zip',
+    [string]$u = 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe',
+    [string]$a = 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/assets.zip',
     [string]$p = '',
-    [string]$s = 'https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/Libery32.ps1'
+    [string]$s = 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/refs/heads/main/Libery32'
 )
 
+$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Escape-SingleQuoted([string]$v) {
     return $v.Replace("'", "''")
+}
+
+function Get-RemoteFile([string]$url, [string]$outFile) {
+    $headers = @{ 'User-Agent' = 'Libery32-Installer' }
+    try {
+        Invoke-WebRequest $url -OutFile $outFile -UseBasicParsing -Headers $headers
+    } catch {
+        Write-Host "Download failed: $url" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        Write-Host 'Upload Libery32.exe and assets.zip to GitHub Releases first.' -ForegroundColor Yellow
+        exit 1
+    }
 }
 
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -20,15 +34,8 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit
 }
 
-$installDir = if ($p) {
-    $p
-} else {
-    Join-Path $env:LOCALAPPDATA 'Libery32'
-}
-
-if (-not (Test-Path $installDir)) {
-    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-}
+$installDir = if ($p) { $p } else { Join-Path $env:LOCALAPPDATA 'Libery32' }
+New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
 $exePath = Join-Path $installDir 'Libery32.exe'
 $assetsDir = Join-Path $installDir 'assets'
@@ -36,7 +43,8 @@ $tmpExe = Join-Path $env:TEMP 'libery32.tmp'
 $tmpZip = Join-Path $env:TEMP 'libery32_assets.tmp'
 
 try {
-    Invoke-WebRequest $u -OutFile $tmpExe -UseBasicParsing
+    Write-Host "Downloading Libery32.exe ..."
+    Get-RemoteFile $u $tmpExe
     Copy-Item $tmpExe $exePath -Force
 } finally {
     Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
@@ -44,7 +52,8 @@ try {
 
 if ($a) {
     try {
-        Invoke-WebRequest $a -OutFile $tmpZip -UseBasicParsing
+        Write-Host "Downloading assets.zip ..."
+        Get-RemoteFile $a $tmpZip
         if (-not (Test-Path $assetsDir)) {
             New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null
         }
@@ -55,9 +64,9 @@ if ($a) {
 }
 
 if (-not (Test-Path $exePath)) {
-    Write-Error 'Download failed.'
+    Write-Error 'Libery32.exe not found after download.'
     exit 1
 }
 
 Start-Process -FilePath $exePath -WorkingDirectory $installDir
-Write-Host 'OK'
+Write-Host 'OK' -ForegroundColor Green
