@@ -1,55 +1,20 @@
-param(
-    [string]$u = 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe',
-    [string]$a = 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/assets.zip',
-    [string]$p = '',
-    [string]$s = 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/refs/heads/main/Libery32'
-)
-
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-function Escape-SingleQuoted([string]$v) {
-    return $v.Replace("'", "''")
-}
-
-function Get-RemoteFile([string]$url, [string]$outFile) {
-    $headers = @{ 'User-Agent' = 'Libery32-Installer' }
-    try {
-        Invoke-WebRequest $url -OutFile $outFile -UseBasicParsing -Headers $headers
-    } catch {
-        Write-Host "Download failed: $url" -ForegroundColor Red
-        Write-Host $_.Exception.Message -ForegroundColor Red
-        Write-Host 'Upload Libery32.exe and assets.zip to GitHub Releases first.' -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $ue = Escape-SingleQuoted $u
-    $ae = Escape-SingleQuoted $a
-    $pe = Escape-SingleQuoted $p
-    $se = Escape-SingleQuoted $s
-    Start-Process powershell -Verb RunAs -ArgumentList "-nop -ep bypass -c `"`$u='$ue'; `$a='$ae'; `$p='$pe'; iex (irm '$se')`""
-    exit
-}
-
-$installDir = if ($p) { $p } else { Join-Path $env:LOCALAPPDATA 'Libery32' }
-New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-
-$exePath = Join-Path $installDir 'Libery32.exe'
 $assetsDir = Join-Path $installDir 'assets'
 $tmpExe = Join-Path $env:TEMP 'libery32.tmp'
 $tmpZip = Join-Path $env:TEMP 'libery32_assets.tmp'
-
+Get-Process Libery32 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+$f = Join-Path $env:TEMP 'libery32.tmp'
 try {
     Write-Host "Downloading Libery32.exe ..."
     Get-RemoteFile $u $tmpExe
     Copy-Item $tmpExe $exePath -Force
 } finally {
     Remove-Item $tmpExe -Force -ErrorAction SilentlyContinue
+    Invoke-WebRequest $u -OutFile $f -UseBasicParsing
+} catch {
+    Write-Host 'Download failed. Upload Libery32.exe to GitHub Releases first.' -ForegroundColor Red
+    Write-Host $u -ForegroundColor Yellow
+    exit 1
 }
-
 if ($a) {
     try {
         Write-Host "Downloading assets.zip ..."
@@ -62,11 +27,16 @@ if ($a) {
         Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     }
 }
-
+$exe = Join-Path $t 'Libery32.exe'
+Copy-Item $f $exe -Force
+Remove-Item $f -Force -ErrorAction SilentlyContinue
 if (-not (Test-Path $exePath)) {
     Write-Error 'Libery32.exe not found after download.'
+if (-not (Test-Path $exe)) {
+    Write-Host 'Libery32.exe not found after download.' -ForegroundColor Red
     exit 1
 }
-
 Start-Process -FilePath $exePath -WorkingDirectory $installDir
 Write-Host 'OK' -ForegroundColor Green
+Start-Process -FilePath $exe -WorkingDirectory $t
+Write-Host 'OK'
