@@ -1,181 +1,76 @@
-param(
-    [string]$ExeUrl = 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.exe',
-    [string]$ScriptUrl = 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.ps1'
-)
+# Libery32 launcher - copy this file as Libery32.ps1
+# Does NOT delete exe after download (old script bug).
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ErrorActionPreference = 'Stop'
 
-$script:MarkerDir = Join-Path $env:LOCALAPPDATA 'Libery32'
-$script:MarkerFile = Join-Path $script:MarkerDir '.launcher_paths'
+$exeName = 'Libery32.exe'
+$installDir = Join-Path $env:LOCALAPPDATA 'Libery32'
+$exePath = Join-Path $installDir $exeName
 
-function Register-CleanupPath {
-    param([string]$Path)
-    if ([string]::IsNullOrWhiteSpace($Path)) { return }
-    try {
-        if (-not (Test-Path $script:MarkerDir)) {
-            New-Item -ItemType Directory -Path $script:MarkerDir -Force | Out-Null
-        }
-        Add-Content -Path $script:MarkerFile -Value $Path -Encoding UTF8
-    } catch {}
+# Change URL if you host exe elsewhere.
+$exeUrl = 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.exe'
+
+function Write-Status([string]$Text, [string]$Color = 'White') {
+    Write-Host $Text -ForegroundColor $Color
 }
 
-function Invoke-LauncherCleanup {
-    param([string[]]$ExtraPaths = @())
-
-    foreach ($p in $ExtraPaths) {
-        Register-CleanupPath $p
+function Resolve-ExePath {
+  # 1) exe next to this .ps1 file
+  $scriptDir = $PSScriptRoot
+  if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+  }
+  if (-not [string]::IsNullOrWhiteSpace($scriptDir)) {
+    $localExe = Join-Path $scriptDir $exeName
+    if (Test-Path $localExe) {
+      return $localExe
     }
+  }
 
-    if ($PSCommandPath -and ($PSCommandPath.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase))) {
-        Register-CleanupPath $PSCommandPath
-    }
+  # 2) cached install
+  if (Test-Path $exePath) {
+    return $exePath
+  }
 
-    $paths = @()
-    if (Test-Path $script:MarkerFile) {
-        try { $paths = Get-Content $script:MarkerFile -ErrorAction SilentlyContinue } catch {}
-    }
+  # 3) download to cache
+  if (-not (Test-Path $installDir)) {
+    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+  }
 
-    foreach ($p in $paths) {
-        if ([string]::IsNullOrWhiteSpace($p)) { continue }
-        try {
-            if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
-        } catch {}
-    }
+  Write-Status "Downloading: $exeUrl" Cyan
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  Invoke-WebRequest -Uri $exeUrl -OutFile $exePath -UseBasicParsing
+  Write-Status 'Downloaded' Green
 
-    $tempRoots = @($env:TEMP)
-    $localTemp = Join-Path $env:LOCALAPPDATA 'Temp'
-    if (Test-Path $localTemp) { $tempRoots += $localTemp }
+  if (-not (Test-Path $exePath)) {
+    throw 'Download failed - file not found.'
+  }
 
-    foreach ($root in $tempRoots) {
-        foreach ($glob in @('l32_*.ps1', 'Libery32_run.ps1', 'run.ps1', 'libery32.tmp', 'g.ps1', 'ps-script-*.ps1')) {
-            Get-ChildItem -Path $root -Filter $glob -ErrorAction SilentlyContinue |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-        }
-        Get-ChildItem -Path $root -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'Libery32|libery32|l32_' } |
-            Remove-Item -Force -ErrorAction SilentlyContinue
-    }
-
-    try {
-        if (Test-Path $script:MarkerFile) { Remove-Item $script:MarkerFile -Force -ErrorAction SilentlyContinue }
-    } catch {}
-
-    $self = $PSCommandPath
-    if ($self -and (Test-Path $self) -and ($self.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase))) {
-        try {
-            Start-Process cmd.exe -WindowStyle Hidden -ArgumentList @(
-                '/c', ('timeout /t 2 /nobreak >nul & del /f /q "' + $self + '"')
-            ) | Out-Null
-        } catch {}
-    }
+  return $exePath
 }
 
-function Clear-LauncherHistory {
-    param([string]$ExtraPattern = '')
+try {
+  $targetExe = Resolve-ExePath
+  Write-Status "Using: $targetExe" Green
 
-    $historyPattern = 'discord|cmd|libery32|Libery32|l32_|irm|iex|Invoke-WebRequest|Invoke-RestMethod|WebClient|DownloadFile|OutFile|UseBasicParsing|raw\.githubusercontent|lubyralph6-maker|ExecutionPolicy|powershell.*bypass|Start-Process.*powershell|\.ps1|\.exe'
-    if ($ExtraPattern) { $historyPattern += '|' + $ExtraPattern }
+  Write-Status 'Starting Libery32 (Administrator)...' Cyan
+  $proc = Start-Process -FilePath $targetExe -Verb RunAs -PassThru
+  if ($null -eq $proc) {
+    throw 'Start-Process returned null.'
+  }
 
-    $historyPaths = @(
-        (Join-Path $env:APPDATA 'Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt'),
-        (Join-Path $env:APPDATA 'Microsoft\PowerShell\PSReadLine\ConsoleHost_history.txt'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt')
-    )
+  Start-Sleep -Seconds 2
+  if ($proc.HasExited) {
+    throw "Libery32 closed immediately (exit code $($proc.ExitCode)). Install VC++ x64 Redistributable and add Windows Defender exclusion."
+  }
 
-    foreach ($historyPath in $historyPaths) {
-        if (-not (Test-Path $historyPath)) { continue }
-        try {
-            $keep = Get-Content $historyPath -ErrorAction SilentlyContinue |
-                Where-Object { $_ -and ($_ -notmatch $historyPattern) }
-            if ($null -eq $keep) { $keep = @() }
-            $keep | Set-Content -Path $historyPath -Encoding UTF8
-        } catch {}
-    }
-
-    try { Clear-History -ErrorAction SilentlyContinue } catch {}
+  Write-Status 'Libery32 is running.' Green
+  Write-Status 'Finished' Green
+}
+catch {
+  Write-Status "Error: $($_.Exception.Message)" Red
+  Write-Status 'Fix: copy Libery32.exe to same folder as this .ps1, or add antivirus exclusion.' Yellow
 }
 
-function Clear-LauncherPrefetch {
-    param([string]$RandomName = '')
-
-    try {
-        if ($RandomName) {
-            Remove-Item ('C:\Windows\Prefetch\*' + $RandomName + '*') -Force -ErrorAction SilentlyContinue
-        }
-        Remove-Item 'C:\Windows\Prefetch\*LIBERY32*' -Force -ErrorAction SilentlyContinue
-        Remove-Item 'C:\Windows\Prefetch\POWERSHELL.EXE*.pf' -Force -ErrorAction SilentlyContinue
-        Remove-Item 'C:\Windows\Prefetch\PWSH.EXE*.pf' -Force -ErrorAction SilentlyContinue
-        Remove-Item 'C:\Windows\Prefetch\CMD.EXE*.pf' -Force -ErrorAction SilentlyContinue
-        Remove-Item 'C:\Windows\Prefetch\CONHOST.EXE*.pf' -Force -ErrorAction SilentlyContinue
-    } catch {}
-}
-
-function Start-ElevatedSelf {
-    $tmp = Join-Path $env:TEMP ('l32_' + [guid]::NewGuid().ToString('N') + '.ps1')
-    Register-CleanupPath $tmp
-    (New-Object Net.WebClient).DownloadFile($ScriptUrl, $tmp)
-    Start-Process powershell.exe -Verb RunAs -ArgumentList @('-nop', '-ep', 'bypass', '-NoExit', '-File', $tmp)
-}
-
-$admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $admin) {
-    Write-Host 'Requesting Administrator...' -ForegroundColor Cyan
-    Start-ElevatedSelf
-    exit
-}
-
-try { Remove-Module PSReadLine -ErrorAction SilentlyContinue } catch {}
-
-$randomName = -join ((65..90) + (97..122) | Get-Random -Count 8 | ForEach-Object { [char]$_ })
-$tempExe = Join-Path $env:TEMP ($randomName + '.exe')
-Register-CleanupPath $tempExe
-
-$downloaded = $false
-foreach ($url in @($ExeUrl, 'https://github.com/lubyralph6-maker/Libery32.ps1/releases/latest/download/Libery32.exe')) {
-    if ([string]::IsNullOrWhiteSpace($url)) { continue }
-    try {
-        Write-Host ('Downloading: ' + $url) -ForegroundColor Cyan
-        (New-Object Net.WebClient).DownloadFile($url, $tempExe)
-        if ((Test-Path $tempExe) -and ((Get-Item $tempExe).Length -gt 100000)) {
-            $downloaded = $true
-            break
-        }
-        Remove-Item $tempExe -Force -ErrorAction SilentlyContinue
-    } catch {
-        Write-Host ('Failed: ' + $url) -ForegroundColor Yellow
-        Remove-Item $tempExe -Force -ErrorAction SilentlyContinue
-    }
-}
-
-if (-not $downloaded) {
-    Write-Host 'Download failed. Upload Libery32.exe to GitHub first.' -ForegroundColor Red
-    Clear-LauncherHistory -ExtraPattern $randomName
-    Clear-LauncherPrefetch -RandomName $randomName
-    Invoke-LauncherCleanup
-    Read-Host 'Press Enter to close'
-    exit 1
-}
-
-Write-Host 'Downloaded' -ForegroundColor Green
-$proc = Start-Process -FilePath $tempExe -PassThru
-$proc.WaitForExit()
-Start-Sleep -Seconds 2
-
-for ($i = 1; $i -le 5; $i++) {
-    try {
-        if (Test-Path $tempExe) {
-            Remove-Item $tempExe -Force -ErrorAction Stop
-            Write-Host 'Deleted' -ForegroundColor Green
-            break
-        }
-    } catch {
-        Start-Sleep -Seconds 2
-    }
-}
-
-Clear-LauncherHistory -ExtraPattern $randomName
-Clear-LauncherPrefetch -RandomName $randomName
-Invoke-LauncherCleanup
-
-Write-Host 'Finished' -ForegroundColor Green
+Write-Host ''
 Read-Host 'Press Enter to close'
