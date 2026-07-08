@@ -1,85 +1,119 @@
-# FASTKILL launcher - works with:
-#   powershell -File .\FASTKILL.ps1
-#   iex (irm 'https://raw.githubusercontent.com/lubyralph6-maker/FASTKILL/main/FASTKILL.ps1')
+# Libery32 launcher - works with:
+#   powershell -File .\Libery32.ps1
+#   iex (irm 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.ps1')
 
 $ErrorActionPreference = 'Stop'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$exeName = 'FastKill.exe'
-$installDir = Join-Path $env:LOCALAPPDATA 'FASTKILL'
+$exeName = 'Libery32.exe'
+$installDir = Join-Path $env:LOCALAPPDATA 'Libery32'
 $exePath = Join-Path $installDir $exeName
-$hdr = @{ 'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FASTKILL/1.0' }
-$urls = @(
-    "https://github.com/lubyralph6-maker/FASTKILL/raw/main/$exeName",
-    "https://raw.githubusercontent.com/lubyralph6-maker/FASTKILL/main/$exeName"
-)
+$exeUrl = 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.exe'
+$webUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Libery32-Launcher/1.0'
 
-function Ok-Exe([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path)) { return $false }
-    try {
-        $b = [IO.File]::ReadAllBytes($Path)
-        return ($b.Length -gt 1MB) -and ([Text.Encoding]::ASCII.GetString($b, 0, 2) -eq 'MZ')
-    } catch { return $false }
+function Write-Status([string]$Text, [string]$Color = 'White') {
+    Write-Host $Text -ForegroundColor $Color
 }
 
-function Get-Exe {
-    foreach ($p in @(
-        (Join-Path $PSScriptRoot $exeName),
-        (Join-Path (Get-Location) $exeName)
-    )) {
-        if (Ok-Exe $p) {
-            Write-Host "Using local: $p" -ForegroundColor Green
-            return (Resolve-Path -LiteralPath $p).Path
+function Get-LocalExeNearScript {
+    $root = $PSScriptRoot
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        return $null
+    }
+    $localExe = Join-Path $root $exeName
+    if (Test-Path -LiteralPath $localExe) {
+        return $localExe
+    }
+    return $null
+}
+
+function Invoke-DownloadWithRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$OutFile,
+        [int]$MaxRetries = 6
+    )
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $headers = @{ 'User-Agent' = $webUserAgent }
+
+    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing -Headers $headers
+            return
+        }
+        catch {
+            $statusCode = $null
+            if ($null -ne $_.Exception.Response) {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+
+            if ($statusCode -eq 429 -and $attempt -lt $MaxRetries) {
+                $waitSeconds = [Math]::Min(90, [Math]::Pow(2, $attempt))
+                Write-Status "GitHub rate limit (429). Retry in ${waitSeconds}s... ($attempt/$MaxRetries)" Yellow
+                Start-Sleep -Seconds $waitSeconds
+                continue
+            }
+
+            throw
         }
     }
+}
 
+function Get-CachedOrDownloadedExe {
     if (-not (Test-Path -LiteralPath $installDir)) {
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     }
-    if (Ok-Exe $exePath) {
-        Write-Host "Using cache: $exePath" -ForegroundColor Green
+
+    if (Test-Path -LiteralPath $exePath) {
+        Write-Status "Using cached: $exePath" Green
         return $exePath
     }
 
-    $tmp = Join-Path $installDir 'FastKill.download'
-    $err = 'Download failed'
-    foreach ($url in $urls) {
-        for ($i = 1; $i -le 5; $i++) {
-            try {
-                Write-Host "Downloading ($i/5): $url" -ForegroundColor Cyan
-                if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -EA SilentlyContinue }
-                Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers $hdr -TimeoutSec 120
-                if (-not (Ok-Exe $tmp)) { throw 'Invalid exe (not MZ / too small)' }
-                Move-Item -LiteralPath $tmp -Destination $exePath -Force
-                Write-Host 'Downloaded' -ForegroundColor Green
-                return $exePath
-            } catch {
-                $err = $_.Exception.Message
-                $wait = if ($err -match '429') { 20 * $i } else { 5 * $i }
-                Write-Host "Retry in ${wait}s... $err" -ForegroundColor Yellow
-                Start-Sleep -Seconds $wait
-            }
-        }
+    Write-Status "Downloading: $exeUrl" Cyan
+    Invoke-DownloadWithRetry -Uri $exeUrl -OutFile $exePath
+    Write-Status 'Downloaded' Green
+
+    if (-not (Test-Path -LiteralPath $exePath)) {
+        throw 'Download failed - Libery32.exe not found after download.'
     }
-    throw $err
+
+    return $exePath
+}
+
+function Resolve-ExePath {
+    $local = Get-LocalExeNearScript
+    if ($null -ne $local) {
+        return $local
+    }
+    return Get-CachedOrDownloadedExe
 }
 
 try {
-    $target = Get-Exe
-    Write-Host "Using: $target" -ForegroundColor Green
-    Write-Host 'Starting FASTKILL (Administrator)...' -ForegroundColor Cyan
-    $proc = Start-Process -FilePath $target -Verb RunAs -PassThru
-    if ($null -eq $proc) { throw 'UAC cancelled or Start-Process failed.' }
+    $targetExe = Resolve-ExePath
+    if ([string]::IsNullOrWhiteSpace($targetExe)) {
+        throw 'Could not resolve Libery32.exe path.'
+    }
+
+    Write-Status "Using: $targetExe" Green
+    Write-Status 'Starting Libery32 (Administrator)...' Cyan
+
+    $proc = Start-Process -FilePath $targetExe -Verb RunAs -PassThru
+    if ($null -eq $proc) {
+        throw 'Start-Process returned null.'
+    }
+
     Start-Sleep -Seconds 2
     if ($proc.HasExited) {
-        throw "Closed immediately (exit $($proc.ExitCode)). Install VC++ x64 Redistributable / add AV exclusion."
+        throw "Libery32 closed immediately (exit $($proc.ExitCode)). Install VC++ x64 Redistributable and add antivirus exclusion."
     }
-    Write-Host 'FASTKILL is running.' -ForegroundColor Green
+
+    Write-Status 'Libery32 is running.' Green
+    Write-Status 'Finished' Green
 }
 catch {
-    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host 'Fix: upload FastKill.exe + FASTKILL.ps1 to GitHub repo FASTKILL (main), same folder.' -ForegroundColor Yellow
-    Write-Host 'If 429: wait 15-30 min, run once (do not spam).' -ForegroundColor Yellow
+    Write-Status "Error: $($_.Exception.Message)" Red
+    Write-Status 'Fix: upload Libery32.exe + Libery32.ps1 to GitHub, or copy exe + ps1 in same folder.' Yellow
+    Write-Status 'If 429: wait 15-30 min, then run the link once (do not spam Enter).' Yellow
 }
 
 Write-Host ''
